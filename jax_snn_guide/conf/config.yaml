@@ -1,0 +1,16 @@
+defaults:
+  - dataset: shd
+  - network: feedforward
+  - _self_
+
+_target_: config_schema.ExperimentConfig
+
+project_name: "snn_comparison"
+learning_rule: "bptt"
+total_epochs: 3000
+seed: 42
+wandb_run_id: ""
+
+optimizer:
+  name: "adam"
+  learning_rate: 0.00001

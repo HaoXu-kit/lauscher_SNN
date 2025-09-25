@@ -1,0 +1,2 @@
+layer_sizes: [3072]
+layer_recurrent_flags: [True]

@@ -1,0 +1,27 @@
+# === JAX 基础 ===
+jax[cpu]   # 或者 jax[cpu]==0.4.31 如果你只在CPU上跑
+
+# === 科学计算 & 可视化 ===
+numpy>=1.26
+scipy>=1.12
+matplotlib>=3.8
+scikit-learn>=1.4
+
+# === 深度学习框架 (用于桥接 Adapter) ===
+torch>=2.6.0
+torchvision
+torchaudio
+
+# === Lauscher 音频前端相关 ===
+soundfile>=0.12
+librosa>=0.10.1
+
+# === JAX-SNN 原始依赖 ===
+wandb>=0.17
+tonic>=1.3
+h5py>=3.10
+pydantic>=2.7
+hydra-core>=1.3
+
+# === 辅助工具 ===
+tqdm>=4.66

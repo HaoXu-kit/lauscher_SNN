@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: lauscher
+Version: 0.1.0
+Summary: A library for encoding audio into spikes.
+Author: ujzax
+Requires-Python: >=3.9
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: matplotlib
+Requires-Dist: numba
+Requires-Dist: soundfile
+Dynamic: author
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

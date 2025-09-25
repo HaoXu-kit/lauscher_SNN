@@ -1,0 +1,6 @@
+# always get latest stable versions
+numpy
+scipy
+matplotlib
+numba
+soundfile
