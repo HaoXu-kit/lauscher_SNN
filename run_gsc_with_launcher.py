@@ -16,9 +16,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 JAX_SNN_DIR = Path(__file__).parent / "jax_snn_guide"  # Point to the root directory of your jax_snn repository.
-T = 200              # Timesteps
+T = 100              # Timesteps
 C = 70               # channels 
-EPOCHS = 50
+EPOCHS = 1000
 LR = 1e-3
 HIDDEN = [256]       # Number of hidden layer neurons (multiple layers possible, e.g., [256,128])
 RECURRENT = [True]   # Equal in length to HIDDEN; whether each layer has a cyclic connection
@@ -177,7 +177,8 @@ def main():
     )
     state = generate_lif_network_state(key, params)
  
-    wandb.init(project="snn-gsc",
+    wandb.init(project="jax-snn",
+               entity="xh63491181-karlsruhe-institute-of-technology",
                config=dict(T=T, C=C, hidden=HIDDEN, recurrent=RECURRENT, lr=LR))
     _ = run_training_loop(
         initial_network_params=params,
