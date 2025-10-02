@@ -1,3 +1,4 @@
+# /project-root/run_gsc_with_launcher.py
 from __future__ import annotations
 import os, sys, subprocess, tempfile
 from pathlib import Path
@@ -11,30 +12,25 @@ import wandb
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
  
-# ========= 配置区域：按需改动 =========
+# ========= Configuration Area: Modify as needed =========
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "4"
-JAX_SNN_DIR = Path(__file__).parent / "jax_snn_guide"  # 指向你的 jax_snn 仓库根目录
-T = 200              # 时间步数（和你的 SNN 时间展开一致）
-C = 70               # 输入通道数（launcher 的 --num_channels）
+JAX_SNN_DIR = Path(__file__).parent / "jax_snn_guide"  # Point to the root directory of your jax_snn repository.
+T = 200              # Timesteps
+C = 70               # channels 
 EPOCHS = 50
 LR = 1e-3
-HIDDEN = [256]       # 隐藏层神经元数（可多层，如 [256,128]）
-RECURRENT = [True]   # 与 HIDDEN 等长；每层是否有循环连接
+HIDDEN = [256]       # Number of hidden layer neurons (multiple layers possible, e.g., [256,128])
+RECURRENT = [True]   # Equal in length to HIDDEN; whether each layer has a cyclic connection
 GSC_VERSION = "v0.02"
 SAMPLE_RATE = 16000
-TRAIN_PLUS_VAL = True  # 训练集= train+validation
+TRAIN_PLUS_VAL = True  # Training set = train + validation
 VERBOSE = False
-USE_CACHE = False      # 设 True 可把构建好的数据缓存到本地 npz
-DEBUG_SMALL_DATA = True     # True 时只取少量样本，方便本地 CPU 调试
-DISABLE_WANDB_IN_DEBUG = True   # 当 debug 模式下禁用 wandb logging
-SMALL_TRAIN_N = 40   # 调试时使用的训练样本数
-SMALL_TEST_N  = 20   # 调试时使用的测试样本数
-CACHE_PATH = Path(__file__).parent / f"gsc_T{T}_C{C}.npz"
+USE_CACHE = False      # Set to True to cache the constructed data locally in an npz file.
 PARALLEL_WORKERS = min(os.cpu_count() or 8, 128)  # 并行进程数
 # ====================================
  
-# 让脚本能 import 到 jax_snn（不改仓库本身）
+# Enable the script to be imported into jax_snn
 if str(JAX_SNN_DIR) not in sys.path:
     sys.path.insert(0, str(JAX_SNN_DIR))
  
@@ -59,7 +55,7 @@ except ImportError:
         generate_lif_network_state,
     )
  
-# ----------------- launcher 调用 & 稀疏→稠密（numpy 实现） -----------------
+# ----------------- Launcher call & sparse→dense conversion (numpy implementation) -----------------
  
 def _run_launcher(audio_path: str | Path, out_npz: str | Path, num_channels: int, verbose: bool):
     cmd = [sys.executable, "-m", "lauscher", str(audio_path), str(out_npz),
@@ -69,13 +65,13 @@ def _run_launcher(audio_path: str | Path, out_npz: str | Path, num_channels: int
     subprocess.run(cmd, check=True)
  
 def _load_sparse_events(npz_path: str | Path) -> np.ndarray:
-    """返回 (2,K)：row0=times(sec, float64), row1=labels(int)"""
+    """Return (2,K): row0=times(sec, float64), row1=labels(int)"""
     d = np.load(npz_path, allow_pickle=False)
     key = "spikes" if "spikes" in d.files else d.files[0]
     return np.asarray(d[key], dtype=np.float64)
  
 def _sparse_to_dense_numpy(events_2xK: np.ndarray, T: int, C: int, max_time_sec: float) -> np.ndarray:
-    """把 (2,K) 稀疏事件转成 [T,C] 稠密 0/1（float32）"""
+    """Convert sparse events (2, K) to dense [T, C] 0/1 (float32)"""
     dense = np.zeros((T, C), dtype=np.float32)
     if events_2xK.size == 0:
         return dense
@@ -88,7 +84,7 @@ def _sparse_to_dense_numpy(events_2xK: np.ndarray, T: int, C: int, max_time_sec:
     return dense
  
 def encode_waveform_to_dense_numpy(wav: np.ndarray, sr: int, T: int, C: int, verbose: bool=False) -> np.ndarray:
-    """waveform(np.float32) → launcher 稀疏事件 → 稠密 [T,C]（numpy float32）"""
+    """waveform(np.float32) → launcher sparse event → dense [T,C] (numpy float32)"""
     max_time_sec = float(len(wav)) / float(sr)
     with tempfile.NamedTemporaryFile(suffix=".wav") as f_wav, \
          tempfile.NamedTemporaryFile(suffix=".npz") as f_npz:
@@ -99,8 +95,8 @@ def encode_waveform_to_dense_numpy(wav: np.ndarray, sr: int, T: int, C: int, ver
  
 def _worker_encode_example(ex: dict, T: int, C: int, verbose: bool, label2id: dict) -> tuple[np.ndarray, np.int32]:
     """
-    进程池工作函数：对单个样本做编码并返回 (x, y)
-    ex: datasets 的一个样本字典，包含 ex["audio"]["array"], ex["audio"]["sampling_rate"], ex["label"]
+    Process pool worker function: Encodes a single sample and returns (x, y)
+    A sample dictionary from the datasets, containing ex[“audio”][“array”], ex[“audio”][‘sampling_rate’], ex[“label”]
     """
     wav = ex["audio"]["array"]  # np.float32 [samples]
     sr = ex["audio"]["sampling_rate"]
@@ -108,7 +104,7 @@ def _worker_encode_example(ex: dict, T: int, C: int, verbose: bool, label2id: di
     y = np.int32(label2id[ex["label"]])
     return x, y
  
-# ----------------- 构建数据（不依赖 jax_snn 内部） -----------------
+# ----------------- Data Construction -----------------
  
 def build_gsc_numpy(T: int, C: int,
                     version: str = GSC_VERSION,
@@ -130,10 +126,6 @@ def build_gsc_numpy(T: int, C: int,
         train_data = ds["train"]
  
     test_data = ds["test"]
- 
-    if DEBUG_SMALL_DATA:
-        train_data = train_data.select(range(min(SMALL_TRAIN_N, len(train_data))))
-        test_data  = test_data.select(range(min(SMALL_TEST_N, len(test_data))))
  
     # Build label mapping using labels from all splits to avoid KeyError on test-only labels
     labels_train = set(ds["train"]["label"]) if "train" in ds else set()
@@ -169,7 +161,7 @@ def build_gsc_numpy(T: int, C: int,
  
     return Xtr, ytr, Xte, yte, n_classes
  
-# ----------------- 主流程：零改动调用 jax_snn 训练 -----------------
+# ----------------- Main Process: Call jax_snn for training -----------------
  
 def main():
     Xtr, ytr, Xte, yte, n_classes = build_gsc_numpy(T=T, C=C)
@@ -185,27 +177,22 @@ def main():
     )
     state = generate_lif_network_state(key, params)
  
-    if DEBUG_SMALL_DATA and DISABLE_WANDB_IN_DEBUG:
-        os.environ["WANDB_MODE"] = "disabled"
-        print("[INFO] DEBUG 模式：wandb 以 disabled 模式初始化，避免 wandb.log 报错")
-        wandb.init(project="snn-gsc",
-                   mode="disabled",
-                   config=dict(T=T, C=C, hidden=HIDDEN, recurrent=RECURRENT, lr=LR))
-    else:
-        wandb.init(project="snn-gsc",
-                   config=dict(T=T, C=C, hidden=HIDDEN, recurrent=RECURRENT, lr=LR))
+    wandb.init(project="snn-gsc",
+               config=dict(T=T, C=C, hidden=HIDDEN, recurrent=RECURRENT, lr=LR))
     _ = run_training_loop(
         initial_network_params=params,
         initial_network_state=state,
         n_epochs=EPOCHS,
         initial_epoch=0,
-        num_training_samples=(40 if DEBUG_SMALL_DATA else len(ytr)),
+        num_training_samples=1000,
         data=data,
         learning_rate=LR,
         eval_fn=evaluate_network,
         key=key,
-        learning_rule=None,  # None -> 默认 BPTT
+        learning_rule=None,  # None -> default BPTT
     )
  
 if __name__ == "__main__":
     main()
+ 
+ 
